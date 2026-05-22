@@ -64,6 +64,6 @@ Python 3.10+ · pandas · numpy · PuLP · matplotlib · plotly · Jupyter Noteb
 
 ---
 
-## Future extension
+## Mathijs
 
 The **price forecasting module**: a model that predicts hourly prices before the official 13:00 publication, making the system proactive rather than reactive. Suitable models: LightGBM or LSTM with weather, time, and lag features. (I will use the result from my colleague)
