@@ -1,0 +1,20 @@
+# Virtual environment
+.venv/
+
+# Environment variables (API keys)
+.env
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Data files (uncomment if data should not be versioned)
+# Data/*.csv
+
+# OS files
+.DS_Store
+Thumbs.db
