@@ -1,6 +1,6 @@
 # Home Battery Optimization under Dynamic Electricity Tariffs
 **Data Science Internship — Belgium | 2026**
-*Kateryna Maiatska*
+
 
 ---
 
