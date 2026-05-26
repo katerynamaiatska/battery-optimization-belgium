@@ -1,0 +1,6 @@
+{
+  "extraPaths": [
+    "optimization/src",
+    "forecasting/src"
+  ]
+}
