@@ -15,6 +15,9 @@ __pycache__/
 # Data files (uncomment if data should not be versioned)
 # Data/*.csv
 
+# my file
+my_noteboek.ipynb
+
 # OS files
 .DS_Store
 Thumbs.db

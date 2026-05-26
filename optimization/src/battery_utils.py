@@ -2,6 +2,8 @@ from pulp import *
 
 # ── LP task ──────────────────────────────────────────────────
 def optimize_day(prices, load, S_max, P_max, eta, S_init, cyclic=True):
+
+    T = len(prices)
     prob = LpProblem("battery_day", LpMinimize)
 
     c = [LpVariable(f"c_{t}", lowBound=0, upBound=P_max) for t in range(T)]
