@@ -3,18 +3,20 @@ import numpy as np
 import pandas as pd
 
 # ── LP optimisation ──────────────────────────────────────────
-def optimize_day(prices, load, S_max, P_max, eta, S_init, cyclic=True):
+def optimize_day(prices, load, S_max, P_max, eta, S_init, cyclic=True, binary=False, deg_cost=0.0):
     """
     Find the optimal charge/discharge schedule for one day using LP.
 
     Args:
-        prices  : array of hourly prices (EUR/kWh), length T
-        load    : array of hourly consumption (H0 relative units), length T
-        S_max   : battery capacity (kWh)
-        P_max   : max charge/discharge power per hour (kW)
-        eta     : one-way efficiency (e.g. 0.95)
-        S_init  : state of charge at start of day (kWh)
-        cyclic  : if True, force s[T-1] >= S_init (prevents free-energy trick)
+        prices   : array of hourly prices (EUR/kWh), length T
+        load     : array of hourly consumption (H0 relative units), length T
+        S_max    : battery capacity (kWh)
+        P_max    : max charge/discharge power per hour (kW)
+        eta      : one-way efficiency (e.g. 0.95)
+        S_init   : state of charge at start of day (kWh)
+        cyclic   : if True, force s[T-1] >= S_init (prevents free-energy trick)
+        binary   : if True, add binary variable to forbid simultaneous charge+discharge (MILP, slower)
+        deg_cost : degradation cost per kWh charged (EUR/kWh); penalises battery wear in objective
 
     Returns dict: status, cost, charge schedule (c), discharge (d), SOC (s), s_final
     """
@@ -26,8 +28,14 @@ def optimize_day(prices, load, S_max, P_max, eta, S_init, cyclic=True):
     d = [LpVariable(f"d_{t}", lowBound=0, upBound=P_max) for t in range(T)]
     s = [LpVariable(f"s_{t}", lowBound=0, upBound=S_max) for t in range(T)]
 
-    # Target function
-    prob += lpSum(prices[t] * (load[t] + c[t] - d[t]) for t in range(T))
+    if binary:
+        z = [LpVariable(f"z_{t}", cat='Binary') for t in range(T)]
+        for t in range(T):
+            prob += c[t] <= P_max * z[t]       # if z=1 → charge
+            prob += d[t] <= P_max * (1 - z[t])  # if z=0 → discharge
+
+    # Objective: electricity cost + battery degradation cost per kWh charged
+    prob += lpSum(prices[t] * (load[t] + c[t] - d[t]) + deg_cost * c[t] for t in range(T))
 
     # Constraints
     # Energy balance
@@ -102,7 +110,7 @@ def threshold_strategy(prices, load, S_max, P_max, eta, S_init, cyclic=True):
     }
 
 
-def backtest(prices_df, load_df, S_max, P_max, eta, S_init, strategy='lp'):
+def backtest(prices_df, load_df, S_max, P_max, eta, S_init, strategy='lp', binary=True, deg_cost=0.0):
     """
     Run day-by-day backtesting over the full prices/load dataset.
     Battery state (s_final) carries over from one day to the next.
@@ -111,6 +119,7 @@ def backtest(prices_df, load_df, S_max, P_max, eta, S_init, strategy='lp'):
         prices_df : DataFrame with DatetimeIndex (tz-aware) and column 'price_eur_kwh'
         load_df   : DataFrame with DatetimeIndex (no tz) and column 'consumption'
         strategy  : 'lp' (optimal, slow) or 'threshold' (rule-based, fast)
+        deg_cost  : degradation cost per kWh charged passed to optimize_day (EUR/kWh)
         others    : same battery parameters as optimize_day
 
     Returns: DataFrame indexed by date with columns
@@ -131,14 +140,20 @@ def backtest(prices_df, load_df, S_max, P_max, eta, S_init, strategy='lp'):
         p = p_by_day.get_group(date).values
         l = l_by_day.get_group(date).values
 
-        # Skip incomplete days (e.g. DST transitions give 23 or 25 hours)
-        if len(p) != 24 or len(l) != 24:
+        T_day = len(p)
+        if T_day not in [23, 24, 25]:  # protection against real data errors
             continue
+
+        # Load profile is always 24h (no DST); align to price hours
+        if len(l) < T_day:
+            l = np.append(l, l[-1:] * (T_day - len(l)))  # fall back: repeat last hour
+        elif len(l) > T_day:
+            l = l[:T_day]                                  # spring forward: trim last hour
 
         cost_base = float(np.dot(p, l))
 
         if strategy == 'lp':
-            res = optimize_day(p, l, S_max, P_max, eta, s, cyclic=False)
+            res = optimize_day(p, l, S_max, P_max, eta, s, cyclic=False, binary=binary, deg_cost=deg_cost)
         else:
             res = threshold_strategy(p, l, S_max, P_max, eta, s, cyclic=False)
 
