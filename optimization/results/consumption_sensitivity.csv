@@ -1,0 +1,11 @@
+annual_kwh,strategy,saving_yr,efc_per_year,life_cycle_yrs,life_yrs,payback_simple,pays_off
+2000,LP,92.0,119.3,50.3,10,43.6,False
+2000,Threshold,45.0,150.8,39.8,10,89.0,False
+3500,LP,146.0,200.8,29.9,10,27.4,False
+3500,Threshold,82.0,244.0,24.6,10,48.7,False
+5000,LP,192.0,264.6,22.7,10,20.8,False
+5000,Threshold,116.0,303.1,19.8,10,34.6,False
+7000,LP,243.0,336.3,17.8,10,16.5,False
+7000,Threshold,133.0,341.2,17.6,10,30.0,False
+9000,LP,285.0,391.9,15.3,10,14.0,False
+9000,Threshold,153.0,363.8,16.5,10,26.1,False
