@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 
 # ── LP optimisation ──────────────────────────────────────────
-def optimize_day(prices, load, S_max, P_max, eta_c, eta_d, S_init, cyclic=True, binary=False, deg_cost=0.0, S_min=0.0):
+def optimize_day(prices, load, S_max, P_max, eta_c, eta_d, S_init, cyclic=True, binary=False, deg_cost=0.0, S_min=0.0, S_final_min=None):
     """
     Find the optimal charge/discharge schedule for one day using LP.
 
@@ -51,9 +51,13 @@ def optimize_day(prices, load, S_max, P_max, eta_c, eta_d, S_init, cyclic=True, 
     for t in range(T):
         prob += d[t] <= load[t]
 
-    # so as not to use the initial charge "as free" 
+    # so as not to use the initial charge "as free"
     if cyclic:
         prob += s[T-1] >= S_init
+
+    # optional: keep end-of-day SOC above a minimum (e.g. S_min) without forcing back to S_init
+    if S_final_min is not None:
+        prob += s[T-1] >= S_final_min
 
     prob.solve(PULP_CBC_CMD(msg=False))
 
@@ -173,7 +177,7 @@ def backtest(prices_df, load_df, S_max, P_max, eta_c, eta_d, S_init, strategy='l
 
         # Load profile is always 24h (no DST); align to price hours
         if len(l) < T_day:
-            l = np.append(l, l[-1:] * (T_day - len(l)))  # fall back: repeat last hour
+            l = np.append(l, np.repeat(l[-1], T_day - len(l)))  # fall back: repeat last hour
         elif len(l) > T_day:
             l = l[:T_day]                                  # spring forward: trim last hour
 
