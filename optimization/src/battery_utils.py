@@ -55,24 +55,25 @@ def optimize_day(prices, load, S_max, P_max, eta_c, eta_d, S_init, cyclic=True, 
     if cyclic:
         prob += s[T-1] >= S_init
 
-    prob.solve(PULP_CBC_CMD(msg=0))
+    prob.solve(PULP_CBC_CMD(msg=False))
 
     c_vals = [value(c[t]) or 0.0 for t in range(T)]
     d_vals = [value(d[t]) or 0.0 for t in range(T)]
 
     # Separate the two cost components so callers can report them independently
-    cost_degradation = deg_cost * sum(c_vals)           # EUR "consumed" from battery lifetime
-    cost_electricity = value(prob.objective) - cost_degradation  # actual grid bill
+    # value() returns Optional[float] per PuLP types, but is always float after a successful solve
+    cost_degradation = deg_cost * sum(c_vals)                          # EUR "consumed" from battery lifetime
+    cost_electricity = value(prob.objective) - cost_degradation        # type: ignore[operator]
 
     return {
         "status":           LpStatus[prob.status],
-        "cost":             value(prob.objective),  # total = electricity + degradation
-        "cost_electricity": cost_electricity,        # what appears on the electricity bill
-        "cost_degradation": cost_degradation,        # battery wear cost for this day
+        "cost":             value(prob.objective),                      # type: ignore[return-value]
+        "cost_electricity": cost_electricity,
+        "cost_degradation": cost_degradation,
         "c":                c_vals,
         "d":                d_vals,
-        "s":                [value(s[t]) for t in range(T)],
-        "s_final":          value(s[T-1])            # carried over to next day
+        "s":                [value(s[t]) for t in range(T)],           # type: ignore[misc]
+        "s_final":          value(s[T-1]),                             # type: ignore[return-value]
     }
 
 
