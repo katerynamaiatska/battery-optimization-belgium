@@ -12,8 +12,22 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Data files (uncomment if data should not be versioned)
-# Data/*.csv
+# Data files
+Data/*.csv
+Data/prepared/
+Data/real_load/intermediate results/*.csv
+Data/real_load/Source Data
+
+# Final data — exclude analysis files, keep only app inputs
+# (optimization_input.csv and overall_verrijkt.csv are kept)
+Data/real_load/Final/dag_zon_*.csv
+Data/real_load/Final/waterstand_kwartieren.csv
+Data/real_load/Final/weekpatroon.csv
+Data/real_load/Final/pv_opbrengst_analyse.csv
+Data/real_load/Final/overall.csv
+
+# Generated backtest / sensitivity results (reproducible by running the code)
+personal_optimization/results/
 
 # my file
 my_noteboek.ipynb

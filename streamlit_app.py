@@ -136,8 +136,8 @@ with tab1:
     c_bt, d_bt, s_bt = [], [], []
     s = S_init
     for date in bt.index:
-        p = prices_win[prices_win.index.date == date]["price_eur_kwh"].to_numpy(dtype=float)
-        l = load_3d[load_3d.index.date == date]["consumption"].to_numpy(dtype=float)
+        p = prices_win[pd.DatetimeIndex(prices_win.index).date == date]["price_eur_kwh"].to_numpy(dtype=float)
+        l = load_3d[pd.DatetimeIndex(load_3d.index).date == date]["consumption"].to_numpy(dtype=float)
         res = optimize_day(p, l, S_max, P_max, eta_c, eta_d, s,
                            cyclic=False, binary=False, deg_cost=deg_cost, S_min=S_min)
         c_bt.extend(res["c"])
@@ -206,7 +206,7 @@ with tab1:
     for i in range(N_DAYS):
         x_soc_bt.extend([i * 24 - 0.5] + list(range(i * 24, i * 24 + 24)))
     x_soc_fc  = [-0.5] + x
-    s_fc_plot  = [S_init] + [float(v) for v in res_fc["s"]]
+    s_fc_plot  = [S_init] + [float(v or 0.0) for v in res_fc["s"]]
     bar_colors = ["#e74c3c" if p < 0 else "#4a90d9" for p in p_all]
 
     def day_lines(ax: Axes) -> None:
@@ -393,7 +393,7 @@ with tab2:
 
     # SOC convention: s_lp_plot[0] = S_init at t=0 (13:00), then end-of-hour values
     # Shift SOC one step so x=t shows the SOC *at the start* of hour t
-    s_lp_eoh   = [float(v) for v in res_lp["s"]]           # 72 end-of-hour values
+    s_lp_eoh   = [float(v or 0.0) for v in res_lp["s"]]    # 72 end-of-hour values
     soc_x      = list(range(T_lp + 1))                      # 0..72
     soc_y      = [S_init] + s_lp_eoh                        # 73 values: start + 72 ends
     # Clamp last tick to T_lp so the axis doesn't extend beyond 72
@@ -478,7 +478,7 @@ with tab2:
 
     # Hourly schedule table
     st.subheader("🕐 Hourly schedule")
-    s_lp_all = [S_init] + [float(v) for v in res_lp["s"]]
+    s_lp_all = [S_init] + [float(v or 0.0) for v in res_lp["s"]]
     rows_lp = []
     for t in range(T_lp):
         rows_lp.append({

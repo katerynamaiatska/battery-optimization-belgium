@@ -1,11 +1,13 @@
 {
   "extraPaths": [
     "optimization/src",
-    "forecasting/src"
+    "forecasting/src",
+    "personal_optimization/src"
   ],
   "exclude": [
     "optimization/notebooks",
     "forecasting/notebooks",
+    "personal_optimization/notebooks",
     ".venv"
   ]
 }
