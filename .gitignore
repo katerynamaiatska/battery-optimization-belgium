@@ -29,8 +29,9 @@ Data/real_load/Final/overall.csv
 # Generated backtest / sensitivity results (reproducible by running the code)
 personal_optimization/results/
 
-# my file
+# my files
 my_noteboek.ipynb
+README_UKR.md
 
 # OS files
 .DS_Store
