@@ -133,7 +133,9 @@ The second part of the project applies the LP model to **measured data from a re
 The dataset spans **Nov 2024 – Apr 2026 (522 days, 15-min resolution)** and includes grid import/export,
 solar production, battery charge/discharge, and SOFAR SOC logs.
 
-> EV charging (~2 400 kWh/yr) is excluded from all saving figures — it cancels out identically across scenarios.
+The main practical goal of Part 2: to test on real data whether it is worthwhile for this specific household to **switch from the day/night tariff to dynamic EPEX**, and what role the battery plays under different control scenarios.
+
+> EV charging (~2 400 kWh/yr) is excluded from all saving figures — it does not interact with the battery system and cancels out identically across all scenarios.
 
 ---
 
@@ -202,7 +204,7 @@ In 2025, **541 hours** had negative EPEX prices (min −0.46 EUR/kWh) — the LP
 
 ### Interactive Streamlit app (`personal_optimization/app.py`)
 
-Five-tab dashboard running on real household data:
+Six-tab dashboard running on real household data:
 
 | Tab | Content |
 |---|---|
@@ -211,6 +213,7 @@ Five-tab dashboard running on real household data:
 | **Backtest** | Full 522-day backtest, monthly saving chart, markup sensitivity |
 | **Forecast** | LP schedule for any selected 3-day window with real EPEX prices |
 | **Battery Calculator** | Custom battery parameters (capacity, power, cost, EFC, markup) → annual saving, payback estimate |
+| **ML Forecast LP** | 35-hour LP schedule using ML consumption and solar forecasts; both dag/nacht and EPEX shown side by side; battery parameters and markup set by sliders; KPIs show difference vs SOFAR |
 
 **Battery Calculator** computes DEG cost from user inputs (`battery_cost / (EFC × S_MAX)`),
 runs a full LP backtest on all historical data, and outputs net saving with payback period
@@ -346,6 +349,93 @@ historical prices as a proxy for the forecast zone.
 
 ---
 
+### Impact of forecasting — quantitative results (§10–§11)
+
+To measure the real cost of forecast errors, the LP backtest was run three ways: with actual load and solar (lower bound), with ML consumption forecast, and with both ML forecasts. Results compared on a shared 513-day dataset.
+
+**Forecast overhead (excess cost relative to ideal LP):**
+
+| Consumption forecast | Solar forecast | Tariff | Overhead |
+|---|---|---|---|
+| Average profile | actual | EPEX | ~+85 EUR/yr |
+| ML forecast | actual | EPEX | ~+60 EUR/yr |
+| ML forecast | ML forecast | EPEX | ~+85 EUR/yr |
+| Average profile | actual | dag/nacht | ~+30 EUR/yr |
+| ML forecast | actual | dag/nacht | ~+57 EUR/yr |
+| ML forecast | ML forecast | dag/nacht | ~+84 EUR/yr |
+
+The ML consumption forecast reduces overhead vs average profile (~+60 instead of ~+85 EUR/yr for EPEX), but adding the solar forecast brings it back up (+27 EUR/yr of additional noise). Reason: `sl_productie_kwh` is a derived quantity with 0.56 correlation to irradiance, not a direct measurement.
+
+**All scenarios vs current SOFAR:**
+
+| Scenario | vs current SOFAR | Condition |
+|---|---|---|
+| LP + dag/nacht, ideal (MPC) | **+88 EUR/yr** ✅ | 24/7 P1 controller |
+| LP + dag/nacht + ML consumption | **+32 EUR/yr** ✅ | day-ahead LP + ML |
+| LP + dag/nacht + both ML | **+5 EUR/yr** ✅ | both ML forecasts |
+| LP + EPEX, ideal (MPC) | **+43 EUR/yr** ✅ | tariff switch + controller |
+| LP + EPEX + ML consumption | **−17 EUR/yr** ❌ | tariff switch + ML |
+| LP + EPEX + both ML | **−42 EUR/yr** ❌ | tariff switch + both ML |
+
+> ML predictions for Nov 2024 – Dec 2025 are in-sample (model trained on those same dates) — §10/§11 results for this period are slightly optimistic, by an estimated 5–15 EUR/yr.
+
+---
+
+### Conclusion for this household
+
+**What can be done now:**
+- Stay on the day/night tariff — at the current markup of 0.17 EUR/kWh, EPEX costs 73 EUR/yr more without a battery.
+- Fix SOFAR freeze events (firmware update or inverter replacement) — this recovers up to +88 EUR/yr that the system is currently missing.
+- Smart EV charging on EPEX — the biggest untapped opportunity: ~2 400 kWh/yr charged from the grid at suboptimal times. EPEX prices are known by 13:00; no ML forecast needed.
+
+**What is not worth doing now:**
+- Switching to EPEX: markup 0.17 EUR/kWh makes EPEX more expensive even with ideal LP.
+- Implementing day-ahead LP with ML forecasts: forecast overhead (~60–85 EUR/yr) exceeds the potential gain.
+- Paying for a solar forecast: at current savings levels it adds ~27 EUR/yr of noise, not profit.
+
+**When to reconsider:**
+
+| Condition | What changes |
+|---|---|
+| Markup ≤ 0.12 EUR/kWh | EPEX becomes competitive |
+| SOFAR without freezes | Real system approaches LP ideal |
+| Solar meter installed | ML solar forecast quality improves significantly |
+| Consumption increases (heat pump) | Larger flows → larger absolute LP saving |
+
+---
+
+### Limitations and inaccuracies
+
+**Data:**
+- `sl_productie_kwh` is a derived quantity (grid injection + battery charging), not a direct measurement. Direct self-consumption is invisible; SOFAR freeze events zero out the value during periods of non-zero solar; discrete charging steps (0 / 0.25 / 0.5 kWh/slot) create horizontal bands. Net effect: correlation with irradiance is only 0.56.
+- Inverter SOC is recorded on only 18 dates in 2026 — limited base for the Streamlit ML tab.
+- EV (~2 400 kWh/yr) is excluded from all calculations.
+
+**Modelling:**
+- ML forecasts for Nov 2024 – Dec 2025 are in-sample — §10/§11 results for this period are slightly inflated (estimated 5–15 EUR/yr).
+- LP backtest assumes perfect schedule execution with no delays and no freeze events.
+- DEG = 0.10 EUR/kWh is an estimated degradation cost, not an exact figure.
+
+---
+
+### Model development
+
+Parametric sensitivity analysis shows **under which conditions** the system becomes profitable. Whether those conditions materialise — more frequent negative prices, lower equipment costs, better controllers — can only be confirmed by re-running the backtest on fresh data.
+
+**Recommended: revisit the analysis in mid-2027 and check:**
+- Whether negative EPEX price frequency has changed (541 hours in 2025).
+- Whether market markup has dropped to ≤ 0.12 EUR/kWh.
+- Whether injection compensation has appeared (currently 0 EUR/kWh).
+- Whether capaciteitstarief has been introduced and how it affects the optimal strategy.
+
+**Technical improvements:**
+1. **MPC controller** — Python or Home Assistant running LP every 15 min with real P1 data. Eliminates forecast error entirely; requires 24/7 infrastructure.
+2. **Smart EV charging** — schedule charging by EPEX prices with no ML models at all.
+3. **Separate solar meter** — eliminates the need to reconstruct `sl_productie`.
+4. **SOFAR update or replacement** — to eliminate 89 freeze events/year.
+
+---
+
 ## Tech stack
 
-Python 3.13 · pandas · numpy · PuLP (CBC solver) · matplotlib · Streamlit · Jupyter Notebook
+Python 3.13 · pandas · numpy · PuLP (CBC solver) · matplotlib · Streamlit · Jupyter Notebook · scikit-learn · joblib
