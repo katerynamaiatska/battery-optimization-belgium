@@ -88,6 +88,17 @@ def load_data():
         pass
     if "soc_begin" not in df.columns:
         df["soc_begin"] = np.nan
+    # ML forecast columns
+    try:
+        cons_fc = pd.read_csv(os.path.join(DATA_DIR, "consumption_forecast.csv"),
+                              index_col=0, parse_dates=True)
+        sol_fc  = pd.read_csv(os.path.join(DATA_DIR, "solar_forecast.csv"),
+                              index_col=0, parse_dates=True)
+        df = df.join(cons_fc[["verbruik_fc"]], how="left")
+        df = df.join(sol_fc[["sl_productie_forecast"]], how="left")
+    except Exception:
+        df["verbruik_fc"] = np.nan
+        df["sl_productie_forecast"] = np.nan
     return df
 
 @st.cache_data
@@ -112,6 +123,11 @@ neg_days_26  = set(df26[df26["price_eur_kwh"] < 0].index.normalize().date)
 _spread_26   = df26.groupby(df26.index.date)["price_eur_kwh"].agg(lambda x: x.max() - x.min())
 spread_days_26   = set(_spread_26[_spread_26 > 0.15].index)
 interesting_26   = sorted(soc_days_26 | neg_days_26 | spread_days_26)
+
+# ── Available dates for ML Forecast tab (2026 only, SOC recorded at 13:00) ────
+import datetime as _dt
+_df26_at13      = df.loc[(df.index.year == 2026) & (df.index.hour == 13) & (df.index.minute == 0)]
+_ml_avail_dates = sorted(_df26_at13[_df26_at13["soc_begin"].notna()].index.date.tolist())
 
 # Fixed y-axis range for EPEX price panel (global, across entire 2026 dataset)
 _ep_min = float(df26["price_eur_kwh"].min())
@@ -202,12 +218,13 @@ def _lp_custom(s_max: float, p_kw: float, deg: float, markup: float) -> pd.DataF
     return pd.DataFrame(rows).set_index("date") if rows else pd.DataFrame()
 
 # ══════════════════════════════════════════════════════════════════════════════
-tab_eda, tab_val, tab_bt, tab_fc, tab_calc = st.tabs([
+tab_eda, tab_val, tab_bt, tab_fc, tab_calc, tab_ml = st.tabs([
     "📊 EDA — Real data",
     "🔍 Validation 2026 — Real vs LP",
     "📈 Backtest — Scenario comparison",
     "⚡ LP Optimisation",
     "🔋 Battery Calculator",
+    "🤖 ML Forecast LP",
 ])
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1519,4 +1536,228 @@ with tab_calc:
                         "based on historical EPEX prices (Nov 2024 – Apr 2026) · "
                         "installation / inverter costs not included."
                     )
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB 6 — ML Forecast LP
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_ml:
+    st.subheader("ML Forecast LP — day-ahead schedule with ML consumption + solar forecasts")
+    st.caption(
+        "Window: selected date 13:00 → next day 24:00 (35 h · 140 slots · 15 min). "
+        "LP optimises using ML forecasts; costs evaluated at actual measured load & solar. "
+        "Only dates with recorded SOFAR SOC at 13:00 are shown (Jan / Apr 2026 — out-of-sample)."
+    )
+
+    if not _ml_avail_dates:
+        st.warning("No dates with SOC data found.")
+        st.stop()
+
+    # ── Controls ──────────────────────────────────────────────────────────────
+    _ml_c1, _ml_c2, _ml_c3, _ml_c4, _ml_c5, _ml_c6 = st.columns(6)
+    with _ml_c1:
+        _ml_date = st.selectbox("Date (13:00 start)", options=_ml_avail_dates,
+                                index=len(_ml_avail_dates) // 2)
+    with _ml_c2:
+        _ml_smax = st.slider("S_MAX (kWh)", 2.5, 10.0, S_MAX, 0.5, key="ml_smax")
+    with _ml_c3:
+        _ml_pkw  = st.slider("P_MAX (kW)",  1.0,  5.0, float(P_KW), 0.5, key="ml_pkw")
+    with _ml_c4:
+        _ml_smin = st.slider("S_MIN (kWh)", 0.0,  2.0, S_MIN, 0.1, key="ml_smin")
+    with _ml_c5:
+        _ml_deg  = st.slider("DEG (EUR/kWh)", 0.0, 0.20, DEG, 0.01, key="ml_deg",
+                             format="%.2f")
+    with _ml_c6:
+        _ml_mu   = st.slider("Markup (EUR/kWh)", 0.05, 0.35, MARKUP, 0.01, key="ml_mu",
+                             format="%.2f")
+
+    st.divider()
+
+    # ── Build 35-hour window ──────────────────────────────────────────────────
+    _ml_start = pd.Timestamp(_ml_date).replace(hour=13)
+    _ml_end   = _ml_start + pd.Timedelta(hours=35) - pd.Timedelta(minutes=15)
+    _ml_win   = df.loc[_ml_start : _ml_end].copy()
+    _ml_pmax  = _ml_pkw / 4.0   # kW → kWh/slot
+
+    if len(_ml_win) < 100:
+        st.warning(f"Not enough data for window {_ml_start} → {_ml_end}. Try another date.")
+        st.stop()
+
+    # Initial SOC: percentage from SOFAR → kWh (scaled to current S_MAX slider)
+    _soc_pct = float(_ml_win["soc_begin"].dropna().iloc[0]) \
+               if _ml_win["soc_begin"].notna().any() else 50.0
+    _ml_s0   = min(max(_soc_pct / 100.0 * _ml_smax, _ml_smin), _ml_smax)
+
+    # ── LP helper: run on window with ML forecasts, evaluate at actual ────────
+    def _run_ml_lp(use_epex, markup_val):
+        p      = (_ml_win["price_eur_kwh"] + markup_val).values if use_epex \
+                 else _ml_win["tarief_price"].values
+        l_fc   = _ml_win["verbruik_fc"].fillna(_ml_win["verbruik_kwh"]).values
+        sol_fc = np.maximum(_ml_win["sl_productie_forecast"].fillna(0).values, 0)
+        res    = optimize_day(p, l_fc, _ml_smax, _ml_pmax, ETA_C, ETA_D, _ml_s0,
+                              cyclic=False, binary=True, deg_cost=_ml_deg,
+                              S_min=_ml_smin, solar=sol_fc, price_inj=PRICE_INJ)
+        l_act   = _ml_win["verbruik_kwh"].values
+        sol_act = _ml_win["sl_productie_kwh"].values
+        net     = l_act + res["c"] - res["d"] - sol_act
+        g_in    = np.maximum(net, 0)
+        g_out   = np.maximum(-net, 0)
+        cost    = (float(np.dot(p, g_in))
+                   - PRICE_INJ * float(g_out.sum())
+                   + res["cost_degradation"])
+        return pd.DataFrame({
+            "price": p, "c": res["c"], "d": res["d"], "s": res["s"],
+            "g_in": g_in, "g_out": g_out,
+            "l_fc": l_fc, "l_act": l_act, "sol_fc": sol_fc, "sol_act": sol_act,
+        }, index=_ml_win.index), cost
+
+    _res_dn, _cost_dn = _run_ml_lp(use_epex=False, markup_val=0.0)
+    _res_ep, _cost_ep = _run_ml_lp(use_epex=True,  markup_val=_ml_mu)
+
+    # SOFAR actual cost on this window (dag/nacht, actual flows + wear)
+    _afn_ml     = (_ml_win["afname_kwh"] - _ml_win["ev_energie_kwh"].fillna(0)).clip(lower=0)
+    _cost_sofar = (float((_afn_ml * _ml_win["tarief_price"]).sum())
+                   - PRICE_INJ * float(_ml_win["injectie_kwh"].sum())
+                   + float(_ml_win["bat_laden_kwh_kw"].clip(0, 0.75).sum()) * DEG)
+
+    # ── KPI strip ─────────────────────────────────────────────────────────────
+    _kc1, _kc2, _kc3, _kc4 = st.columns(4)
+    def _ml_kpi(col, label, value_str, note, delta=None):
+        with col:
+            if delta is not None:
+                _vc = "#27ae60" if delta >= 0 else "#c0392b"
+                _vh = f"<span style='color:{_vc}'>{value_str}</span>"
+            else:
+                _vh = value_str
+            st.markdown(
+                f"<div style='padding:4px 0 10px 0'>"
+                f"<div style='font-size:11px;color:#555;font-weight:600;"
+                f"text-transform:uppercase;letter-spacing:.04em'>{label}</div>"
+                f"<div style='font-size:20px;font-weight:700;color:#1a1a2e;"
+                f"line-height:1.2'>{_vh}</div>"
+                f"<div style='font-size:11px;color:#888;margin-top:2px'>{note}</div>"
+                f"</div>", unsafe_allow_html=True)
+
+    _ml_kpi(_kc1, "SOFAR cost (35 h)",
+            f"{_cost_sofar:.2f} EUR", "actual system · dag/nacht tariff")
+    _ml_kpi(_kc2, "LP dag/nacht saving vs SOFAR",
+            f"{_cost_sofar - _cost_dn:+.2f} EUR",
+            "same tariff · ML forecasts", delta=_cost_sofar - _cost_dn)
+    _ml_kpi(_kc3, "LP EPEX saving vs SOFAR",
+            f"{_cost_sofar - _cost_ep:+.2f} EUR",
+            f"EPEX + markup {_ml_mu:.2f} · ML forecasts", delta=_cost_sofar - _cost_ep)
+    _ml_kpi(_kc4, "Initial SOC",
+            f"{_soc_pct:.0f}%  ({_ml_s0:.2f} kWh)",
+            f"SOFAR reading at {_ml_start.strftime('%d/%m %H:%M')}")
+
+    st.divider()
+
+    # ── Chart helper ──────────────────────────────────────────────────────────
+    _GR_ml = dict(alpha=0.2, lw=0.7, color="#888")
+
+    def _ml_ax(ax, ts):
+        ax.spines["top"].set_visible(False);  ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_alpha(0.25);    ax.spines["bottom"].set_alpha(0.25)
+        ax.set_facecolor("#fafafa")
+        ax.yaxis.grid(True, **_GR_ml);  ax.set_axisbelow(True)
+        ax.tick_params(labelsize=8, length=3, color="#aaa")
+        # Midnight separator
+        for _sep in pd.date_range(ts[0].normalize() + pd.Timedelta(days=1),
+                                   ts[-1], freq="D"):
+            if ts[0] < _sep < ts[-1]:
+                ax.axvline(_sep, color="#bbb", lw=0.8, ls="--", alpha=0.6)
+
+    # Shared y-axis limits for price and charge/discharge panels
+    _all_prices  = pd.concat([_res_dn["price"], _res_ep["price"]])
+    _p_margin    = (_all_prices.max() - _all_prices.min()) * 0.08 + 0.01
+    _price_ylim  = (_all_prices.min() - _p_margin, _all_prices.max() + _p_margin)
+
+    _dn_net = (_res_dn["c"] - _res_dn["d"]) * 4
+    _ep_net = (_res_ep["c"] - _res_ep["d"]) * 4
+    _bat_abs = max(abs(_dn_net).max(), abs(_ep_net).max(), 0.1)
+    _bat_ylim = (-_bat_abs * 1.12, _bat_abs * 1.12)
+
+    def _make_ml_fig(df_res, use_epex):
+        fig, axes = plt.subplots(4, 1, figsize=(6.5, 11), sharex=True)
+        fig.patch.set_facecolor("#fafafa")
+        ts = df_res.index
+
+        # Panel 1 — price
+        ax = axes[0]
+        clr = "#c0392b" if use_epex else "#2471a3"
+        ax.plot(ts, df_res["price"], color=clr, lw=1.4)
+        if not use_epex:
+            ax.axhline(PRICE_DAG,   color="#2471a3", lw=0.8, ls=":", alpha=0.7,
+                       label=f"Dag {PRICE_DAG}")
+            ax.axhline(PRICE_NACHT, color="#95a5a6", lw=0.8, ls=":", alpha=0.7,
+                       label=f"Nacht {PRICE_NACHT}")
+            ax.legend(fontsize=7, framealpha=0.0)
+        ax.set_ylim(_price_ylim)
+        ax.set_ylabel("EUR/kWh", fontsize=8)
+        ax.set_title("Dag/nacht tariff" if not use_epex else f"EPEX + markup {_ml_mu:.2f}",
+                     fontsize=9, pad=4)
+        _ml_ax(ax, ts)
+
+        # Panel 2 — forecast vs actual
+        ax = axes[1]
+        ax.plot(ts, df_res["l_act"] * 4, color="#2c3e50", lw=1.3, label="Load actual")
+        ax.plot(ts, df_res["l_fc"]  * 4, color="#2c3e50", lw=1.0, ls="--",
+                alpha=0.5, label="Load forecast")
+        ax.fill_between(ts, df_res["sol_act"] * 4, alpha=0.55,
+                        color="#f39c12", label="Solar actual")
+        ax.fill_between(ts, df_res["sol_fc"]  * 4, alpha=0.25,
+                        color="#e67e22", label="Solar forecast")
+        ax.set_ylabel("kW", fontsize=8)
+        ax.set_title("Forecast vs actual — load & solar", fontsize=9, pad=4)
+        ax.legend(fontsize=7, framealpha=0.0, ncol=2)
+        _ml_ax(ax, ts)
+
+        # Panel 3 — LP charge/discharge
+        net_kw = (df_res["c"] - df_res["d"]) * 4
+        ax = axes[2]
+        ax.fill_between(ts, np.maximum(net_kw, 0), color="#2ecc71", alpha=0.8, label="Charge")
+        ax.fill_between(ts, np.minimum(net_kw, 0), color="#e74c3c", alpha=0.8,
+                        label="Discharge")
+        ax.axhline(0, color="#555", lw=0.6)
+        ax.set_ylim(_bat_ylim)
+        ax.set_ylabel("kW", fontsize=8)
+        ax.set_title("Battery schedule (LP · ML forecasts)", fontsize=9, pad=4)
+        ax.legend(fontsize=7, framealpha=0.0)
+        _ml_ax(ax, ts)
+
+        # Panel 4 — SOC
+        s = df_res["s"].values
+        ax = axes[3]
+        ax.plot(ts, s, color="#2471a3", lw=1.8)
+        ax.fill_between(ts, s, _ml_smin, where=s >= _ml_smin, alpha=0.10, color="#2471a3")
+        ax.axhline(_ml_smax, color="#888",    lw=0.9, ls=":", label=f"S_MAX = {_ml_smax} kWh")
+        ax.axhline(_ml_smin, color="#e74c3c", lw=0.9, ls=":", label=f"S_MIN = {_ml_smin} kWh")
+        ax.set_ylim(-0.2, _ml_smax + 0.8)
+        ax.set_ylabel("kWh", fontsize=8)
+        ax.set_title("State of charge (SOC)", fontsize=9, pad=4)
+        ax.legend(fontsize=7, framealpha=0.0)
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m\n%H:%M"))
+        ax.xaxis.grid(True, **_GR_ml)
+        _ml_ax(ax, ts)
+
+        plt.tight_layout(pad=1.0, h_pad=1.2)
+        return fig
+
+    # ── Side-by-side columns ──────────────────────────────────────────────────
+    _col_dn, _col_ep = st.columns(2)
+
+    with _col_dn:
+        st.markdown(
+            f"#### Dag/nacht  ·  cost = **{_cost_dn:.2f} EUR**  "
+            f"·  vs SOFAR = **{_cost_sofar - _cost_dn:+.2f} EUR**"
+        )
+        st.pyplot(_make_ml_fig(_res_dn, use_epex=False), use_container_width=True)
+        plt.close()
+
+    with _col_ep:
+        st.markdown(
+            f"#### EPEX + {_ml_mu:.2f}  ·  cost = **{_cost_ep:.2f} EUR**  "
+            f"·  vs SOFAR = **{_cost_sofar - _cost_ep:+.2f} EUR**"
+        )
+        st.pyplot(_make_ml_fig(_res_ep, use_epex=True), use_container_width=True)
+        plt.close()
 

@@ -276,14 +276,34 @@ for no benefit.
 - **Better ML forecast** (lag features, day-of-week patterns) — reduces the gap; becomes worthwhile
   when annual savings exceed ~200 EUR/yr.
 
-### Solar production — only a binary signal is needed
+### Solar production — an ML forecast adds overhead, not value
 
-The only decision that requires solar information is:
+The only decision that genuinely requires solar information is:
 > *How full should the battery be at sunrise — should I leave room for solar surplus?*
 
-A rough weather forecast (sunny / cloudy) from a free API (e.g. Open-Meteo) is sufficient for this.
-Detailed 15-min solar irradiance forecasting is not economically justified for a 5 kWh system
-at current saving levels — the additional gain is negligible compared to API and infrastructure costs.
+For this, a rough weather signal (sunny / cloudy) from a free API is sufficient.
+
+**Empirical result (§11, `03_optimization_solar.ipynb`):** A full ML solar forecast model
+(HistGradientBoostingRegressor on irradiance + time features, ~26% improvement over naive baseline)
+was added on top of the ML consumption forecast and evaluated at actual solar output.
+
+| Scenario | vs current SOFAR |
+|---|---|
+| LP dag/nacht + ML consumption forecast | +32 EUR/yr |
+| LP dag/nacht + ML consumption + ML solar | **+5 EUR/yr** |
+| LP EPEX + ML consumption forecast | −17 EUR/yr |
+| LP EPEX + ML consumption + ML solar | −42 EUR/yr |
+
+Adding the ML solar forecast costs **~27 EUR/yr in additional overhead** — it does not improve results,
+it makes them worse. The reason: `sl_productie_kwh` is a derived quantity (grid injection + battery
+charging), not a direct measurement. SOFAR freeze events (56 days/yr) and discrete charging steps
+(0 / 0.25 / 0.5 kWh/slot) add noise that the model cannot learn around; daytime correlation
+with irradiance is only 0.56.
+
+**The strongest practical conclusion from §11:** LP dag/nacht with both ML forecasts achieves
+**+5 EUR/yr vs SOFAR** — essentially the same result as the current system. A complete day-ahead
+LP pipeline with two trained ML models and all the associated infrastructure delivers no benefit
+over the simple SOFAR threshold rule at this scale. The forecasting complexity cancels itself out.
 
 ### Multi-day horizon — marginal benefit
 
@@ -310,9 +330,12 @@ prototyped but not evaluated). The qualitative argument is structural:
 1. **MPC** — fetch EPEX prices at 13:00, re-run LP every 15 min with real-time P1 consumption data;
    binary weather signal for morning SoC decision. Zero forecast error, but needs 24/7 infrastructure.
 2. **Threshold rule** — charge when price < threshold, discharge when price > threshold;
-   does not depend on consumption forecast at all; simpler and more robust at this saving level.
-3. **Day-ahead LP + ML consumption forecast** — viable only if the forecast is accurate enough
-   to reduce the 85 EUR/yr gap significantly; economically justified at savings > ~200 EUR/yr.
+   does not depend on any forecast; simpler and more robust at this saving level. This is what
+   the current SOFAR controller approximates (when it is not frozen).
+3. **Day-ahead LP + ML forecasts** — the complete pipeline (ML consumption + ML solar) was tested
+   in §11 and yields +5 EUR/yr vs SOFAR on the dag/nacht tariff: effectively no improvement over
+   the current system. Adding an ML solar forecast on top of ML consumption makes results worse,
+   not better. This option only becomes worthwhile at savings > ~200 EUR/yr.
 
 ### Price forecasting module (in progress)
 
