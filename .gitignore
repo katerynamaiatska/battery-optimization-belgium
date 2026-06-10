@@ -16,11 +16,14 @@ __pycache__/
 Data/*.csv
 Data/prepared/
 Data/real_load/intermediate results/*.csv
-Data/real_load/Source Data
+!Data/real_load/intermediate results/epex_kwartieren.csv
+Data/real_load/Source Data/*
+!Data/real_load/Source Data/vilvoorde_zonneschijn.csv
 
 # Final data — exclude analysis files, keep only app inputs
 # (optimization_input.csv and overall_verrijkt.csv are kept)
 Data/real_load/Final/dag_zon_*.csv
+!Data/real_load/Final/dag_zon_met_verhoudingen.csv
 Data/real_load/Final/waterstand_kwartieren.csv
 Data/real_load/Final/weekpatroon.csv
 Data/real_load/Final/pv_opbrengst_analyse.csv
