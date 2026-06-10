@@ -18,7 +18,7 @@ Data/prepared/
 Data/real_load/intermediate results/*.csv
 !Data/real_load/intermediate results/epex_kwartieren.csv
 Data/real_load/Source Data/*
-!Data/real_load/Source Data/vilvoorde_zonneschijn.csv
+!Data/real_load/Source Data/solar_radiation_local.csv
 
 # Final data — exclude analysis files, keep only app inputs
 # (optimization_input.csv and overall_verrijkt.csv are kept)
@@ -39,3 +39,10 @@ README_UKR.md
 # OS files
 .DS_Store
 Thumbs.db
+
+# Trained ML models (binary, reproducible by running notebooks 04 and 05)
+personal_optimization/models/*.pkl
+
+# Local IDE / cache
+pyrightconfig.json
+.cache.sqlite

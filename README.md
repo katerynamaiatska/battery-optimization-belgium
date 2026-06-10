@@ -13,6 +13,27 @@ A comparable tool exists for the Netherlands ([energie.theoxygent.nl](https://en
 
 ---
 
+## How to run
+
+```bash
+# 1. Clone and install
+git clone https://github.com/katerynamaiatska/battery-optimization-belgium
+cd battery-optimization-belgium
+poetry install
+
+# 2. Part 1 — LP demo (synthetic data)
+streamlit run optimization/streamlit_app.py
+
+# 3. Part 2 — real household data
+streamlit run personal_optimization/app.py
+```
+
+To retrain the ML forecasting models (optional — precomputed CSVs are included):
+1. Run `personal_optimization/notebooks/04_consumption_forecast.ipynb`
+2. Run `personal_optimization/notebooks/05_solar_forecast.ipynb`
+
+---
+
 ## Part 1 — Synthetic household data, no solar panels (`optimization/`)
 
 The first part builds and evaluates an LP battery optimization system using **synthetic household load profiles and public EPEX day-ahead price data** for Belgium (2022–2025). No solar panels — pure price arbitrage on a standard H0 consumption profile (3 500 kWh/yr baseline).
