@@ -1,0 +1,5 @@
+forecast,tariff,gap_eur_yr
+Average profile,EPEX+markup,84.7
+Average profile,dag/nacht,86.0
+ML forecast,EPEX+markup,60.3
+ML forecast,dag/nacht,56.5
