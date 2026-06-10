@@ -13,6 +13,10 @@ A comparable tool exists for the Netherlands ([energie.theoxygent.nl](https://en
 
 ---
 
+## Part 1 — Synthetic household data, no solar panels (`optimization/`)
+
+The first part builds and evaluates an LP battery optimization system using **synthetic household load profiles and public EPEX day-ahead price data** for Belgium (2022–2025). No solar panels — pure price arbitrage on a standard H0 consumption profile (3 500 kWh/yr baseline).
+
 ## What is implemented
 
 ### 1. Data collection (`01_data_collection.ipynb`)
