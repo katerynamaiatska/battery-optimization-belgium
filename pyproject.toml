@@ -17,7 +17,11 @@ dependencies = [
     "pulp (>=2.9.0,<3.0.0)",
     "matplotlib (>=3.10.0,<4.0.0)",
     "plotly (>=6.0.0,<7.0.0)",
-    "demandlib (>=0.2.2,<0.3.0)"
+    "demandlib (>=0.2.2,<0.3.0)",
+    "streamlit (>=1.45.0,<2.0.0)",
+    "streamlit-option-menu (>=0.4.0,<1.0.0)",
+    "scikit-learn (>=1.6.0,<2.0.0)",
+    "joblib (>=1.4.0,<2.0.0)"
 ]
 
 

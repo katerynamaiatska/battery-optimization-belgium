@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import matplotlib.patches as mpatches
 import streamlit as st
+from streamlit_option_menu import option_menu
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 from solar_utils import optimize_day
@@ -38,11 +39,54 @@ C = {
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Battery Optimisation Belgium",
-                   page_icon="🔋", layout="wide")
-st.title("🔋 Battery Optimisation — Real Belgian Household")
-st.caption("SOFAR ME3000SP · BYD LFP 5 kWh / 3 kW · Nov 2024 – Apr 2026")
+                   page_icon="🔋", layout="wide",
+                   initial_sidebar_state="expanded")
+
+st.markdown("""
+<style>
+#MainMenu, footer {visibility: hidden;}
+[data-testid="stToolbar"] {visibility: hidden;}
+/* Force sidebar always visible with explicit width */
+[data-testid="stSidebar"] {
+    display: block !important;
+    visibility: visible !important;
+    transform: translateX(0) !important;
+    margin-left: 0 !important;
+    min-width: 240px !important;
+    width: 240px !important;
+}
+[data-testid="stSidebar"] > div:first-child {
+    min-width: 240px !important;
+    width: 240px !important;
+    overflow: visible !important;
+}
+/* Hide collapse/expand arrows — sidebar is always shown */
+[data-testid="stSidebarCollapseButton"] {display: none !important;}
+[data-testid="collapsedControl"] {display: none !important;}
+.block-container {padding-top: 1.5rem; padding-bottom: 2rem;}
+[data-testid="stSidebar"] > div:first-child {padding-top: 1rem;}
+/* metric cards */
+.mc { border-radius: 8px; padding: 14px 18px; margin: 4px 0; }
+.mc-label {
+    font-size: 0.72em; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.07em; color: #555;
+}
+.mc-value { font-size: 1.55em; font-weight: 700; margin-top: 3px; }
+.mc-sub   { font-size: 0.78em; color: #777; margin-top: 2px; }
+</style>
+""", unsafe_allow_html=True)
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+def metric_card(label, value, sub=None, color="#1A5276", bg="#EBF5FB"):
+    sub_html = f'<div class="mc-sub">{sub}</div>' if sub else ""
+    st.markdown(
+        f'<div class="mc" style="background:{bg};border-left:5px solid {color};">'
+        f'<div class="mc-label">{label}</div>'
+        f'<div class="mc-value" style="color:{color};">{value}</div>'
+        f'{sub_html}</div>',
+        unsafe_allow_html=True,
+    )
+
 def monthly_annual(series):
     s = series.dropna().copy()
     s.index = pd.to_datetime(s.index)
@@ -94,6 +138,9 @@ def load_data():
                               index_col=0, parse_dates=True)
         sol_fc  = pd.read_csv(os.path.join(DATA_DIR, "solar_forecast.csv"),
                               index_col=0, parse_dates=True)
+        # Deduplicate forecast indices to prevent extra rows from left-join
+        cons_fc = cons_fc[~cons_fc.index.duplicated(keep="first")]
+        sol_fc  = sol_fc[~sol_fc.index.duplicated(keep="first")]
         df = df.join(cons_fc[["verbruik_fc"]], how="left")
         df = df.join(sol_fc[["sl_productie_forecast"]], how="left")
     except Exception:
@@ -218,19 +265,122 @@ def _lp_custom(s_max: float, p_kw: float, deg: float, markup: float) -> pd.DataF
     return pd.DataFrame(rows).set_index("date") if rows else pd.DataFrame()
 
 # ══════════════════════════════════════════════════════════════════════════════
-tab_eda, tab_val, tab_bt, tab_fc, tab_calc, tab_ml = st.tabs([
-    "📊 EDA — Real data",
-    "🔍 Validation 2026 — Real vs LP",
-    "📈 Backtest — Scenario comparison",
-    "⚡ LP Optimisation",
-    "🔋 Battery Calculator",
-    "🤖 ML Forecast LP",
-])
+with st.sidebar:
+    st.markdown("## 🔋 Battery Optim.")
+    st.caption("Real Belgian Household")
+    st.divider()
+    page = option_menu(
+        menu_title=None,
+        options=["Overview", "EDA", "Validation 2026", "Backtest",
+                 "LP Optimisation", "Battery Calculator", "ML Forecast LP"],
+        icons=["house-fill", "bar-chart-fill", "search", "graph-up-arrow",
+               "lightning-fill", "battery-half", "robot"],
+        default_index=0,
+        styles={
+            "container":         {"padding": "0", "background-color": "#F0F4F8"},
+            "icon":              {"color": "#1A5276", "font-size": "14px"},
+            "nav-link":          {
+                "font-size": "14px", "text-align": "left", "padding": "8px 16px",
+                "--hover-color": "#D6EAF8",
+            },
+            "nav-link-selected": {
+                "background-color": "#1A5276", "color": "white", "font-weight": "600",
+            },
+        },
+    )
+    st.divider()
+    st.caption("📁 [GitHub](https://github.com/katerynamaiatska/battery-optimization-belgium)")
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 1 — EDA  (full period: Nov 2024 – Apr 2026)
+# PAGE 0 — OVERVIEW
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_eda:
+if page == "Overview":
+    st.markdown("## 🔋 Battery Optimisation — Real Belgian Household")
+    st.markdown("*SOFAR ME3000SP · BYD LFP 5 kWh / 3 kW · Solar PV · Dynamic EPEX contract*")
+    st.divider()
+
+    col_info, col_specs = st.columns([3, 2])
+    with col_info:
+        st.markdown("""
+        ### About this project
+
+        This dashboard analyses **LP battery optimisation** on real measured data from a Belgian
+        household with solar panels and a BYD LFP battery (Nov 2024 – Apr 2026 · 522 days · 15-min resolution).
+
+        The LP optimiser computes the ideal charge/discharge schedule using real EPEX day-ahead prices.
+        Results are compared against the actual SOFAR inverter behaviour.
+
+        **Main question:** Is it worth switching from the day/night tariff to dynamic EPEX — and
+        does adding LP optimization and ML forecasts improve the result?
+        """)
+    with col_specs:
+        st.markdown("""
+        ### System
+        | | |
+        |:---|:---|
+        | Inverter | SOFAR ME3000SP |
+        | Battery | BYD LFP 5 kWh / 3 kW |
+        | Solar | PV with CT clamp |
+        | Contract | Day/Night tariff of EPEX |
+        | Period | Nov 2024 – Apr 2026 |
+        | Resolution | 15 min (96 slots/day) |
+        | DEG | 0.10 EUR/kWh |
+        | Markup | 0.17 EUR/kWh |
+        """)
+
+    st.divider()
+    st.markdown(f"### Key results (annualised · {len(common)} days · DEG {DEG} EUR/kWh · markup {MARKUP} EUR/kWh)")
+    st.caption("⚠️ LP values are upper bounds — perfect day-ahead price foresight, no freeze events, constant capacity.")
+
+    _ov_sofar        = ann_s0_dn - yr_s1w       # current system: SOFAR net saving vs solar-only
+    _ov_ep_tariff    = yr_s4w - yr_s1w          # EPEX switch, same SOFAR schedule (Q2)
+    _ov_lp_dn_sofar  = yr_s1w - ann_lp_dn       # LP dag/nacht gain over current SOFAR (same tariff)
+    _ov_lp_ep_sofar  = yr_s1w - ann_lp_ep       # LP EPEX gain over current SOFAR (tariff switch + ideal control)
+
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        metric_card("Real SOFAR today",
+                    f"{_ov_sofar:+.0f} EUR/yr",
+                    "vs solar-only (no battery) · current state",
+                    "#1E8449", "#EAFAF1")
+    with c2:
+        _tariff_color = "#C0392B" if _ov_ep_tariff > 0 else "#1E8449"
+        _tariff_bg    = "#FDEDEC" if _ov_ep_tariff > 0 else "#EAFAF1"
+        metric_card("EPEX tariff switch only",
+                    f"{_ov_ep_tariff:+.0f} EUR/yr",
+                    "same SOFAR schedule, only tariff changes · Q2 scenario",
+                    _tariff_color, _tariff_bg)
+    with c3:
+        metric_card("LP dag/nacht — max gain vs SOFAR",
+                    f"{_ov_lp_dn_sofar:+.0f} EUR/yr",
+                    "staying on dag/nacht · ideal control · upper bound",
+                    "#1A5276", "#EBF5FB")
+    with c4:
+        _ep_color = "#1A5276" if _ov_lp_ep_sofar >= 0 else "#C0392B"
+        _ep_bg    = "#EBF5FB" if _ov_lp_ep_sofar >= 0 else "#FDEDEC"
+        metric_card("LP EPEX — max gain vs SOFAR",
+                    f"{_ov_lp_ep_sofar:+.0f} EUR/yr",
+                    f"tariff switch to EPEX + ideal control · upper bound · markup {MARKUP} EUR/kWh",
+                    _ep_color, _ep_bg)
+
+    st.divider()
+    st.info(
+        "**Main finding:** LP dag/nacht with both ML forecasts = **+5 EUR/yr vs SOFAR** — "
+        "a complete day-ahead LP pipeline with two trained ML models delivers no practical benefit "
+        "over the current SOFAR threshold rule. The forecasting complexity cancels itself out."
+    )
+
+    st.divider()
+    ca, cb, cc = st.columns(3)
+    ca.success("📊 **EDA** — Energy flows, prices and SOC patterns")
+    cb.success("📈 **Backtest** — Full 522-day LP vs SOFAR comparison")
+    cc.success("🤖 **ML Forecast LP** — Live 35-hour LP with ML forecasts")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGE 1 — EDA  (full period: Nov 2024 – Apr 2026)
+# ═══════════════════════════════════════════════════════════════════════════════
+if page == "EDA":
     period_start = hourly.index.min().date()
     period_end   = hourly.index.max().date()
     st.subheader(f"EDA — Real household data  ({period_start} → {period_end})")
@@ -238,11 +388,21 @@ with tab_eda:
 
     # ── Top metrics (all data) ─────────────────────────────────────────────────
     m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Grid import",        f"{hourly['afname_kwh'].sum():.0f} kWh")
-    m2.metric("Solar delivered",    f"{hourly['sl_productie_kwh'].sum():.0f} kWh")
-    m3.metric("Grid injection",     f"{hourly['injectie_kwh'].sum():.0f} kWh")
-    m4.metric("Battery charged",    f"{hourly['bat_laden_kwh_kw'].sum():.0f} kWh")
-    m5.metric("Total cost (dag/n)", f"{hourly['cost_dn'].sum():.0f} EUR")
+    with m1:
+        metric_card("Grid import", f"{hourly['afname_kwh'].sum():.0f} kWh",
+                    "total from grid", "#1A5276", "#EBF5FB")
+    with m2:
+        metric_card("Solar delivered", f"{hourly['sl_productie_kwh'].sum():.0f} kWh",
+                    "to battery + grid", "#F39C12", "#FEF9E7")
+    with m3:
+        metric_card("Grid injection", f"{hourly['injectie_kwh'].sum():.0f} kWh",
+                    "exported to grid", "#1E8449", "#EAFAF1")
+    with m4:
+        metric_card("Battery charged", f"{hourly['bat_laden_kwh_kw'].sum():.0f} kWh",
+                    "total charged", "#8E44AD", "#F4ECF7")
+    with m5:
+        metric_card("Total cost (dag/n)", f"{hourly['cost_dn'].sum():.0f} EUR",
+                    "full period", "#C0392B", "#FDEDEC")
 
     st.divider()
 
@@ -489,9 +649,9 @@ with tab_eda:
         )
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 2 — VALIDATION 2026  (3 scenarios side-by-side)
+# PAGE 2 — VALIDATION 2026  (3 scenarios side-by-side)
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_val:
+if page == "Validation 2026":
     st.subheader("Real SOFAR vs LP optimal — three scenarios side by side")
     st.caption(
         f"Only **interesting days** shown: ⭐ SOC logged · ⚡ negative EPEX price · 📈 EPEX spread > 0.15 EUR/kWh "
@@ -799,9 +959,9 @@ with tab_val:
             st.pyplot(fig, use_container_width=False); plt.close()
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 3 — BACKTEST (§4 + §5 from 03_optimization_solar.ipynb)
+# PAGE 3 — BACKTEST (§4 + §5 from 03_optimization_solar.ipynb)
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_bt:
+if page == "Backtest":
     st.subheader("Backtest — Scenario comparison & monthly results")
     st.info(
         f"Pre-computed LP backtest: **{len(common)} days** "
@@ -1123,9 +1283,9 @@ with tab_bt:
     )
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 4 — LP Оптимізація (EPEX + markup, ідеальний прогноз, 3 дні)
+# PAGE 4 — LP Оптимізація (EPEX + markup, ідеальний прогноз, 3 дні)
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_fc:
+if page == "LP Optimisation":
     st.subheader("LP Optimisation — EPEX + markup  (★ perfect forecast)")
 
     # ── KPI strip ─────────────────────────────────────────────────────────────
@@ -1323,9 +1483,9 @@ with tab_fc:
         )
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 5 — Battery Calculator
+# PAGE 5 — Battery Calculator
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_calc:
+if page == "Battery Calculator":
     st.subheader("🔋 Battery Calculator — Custom parameters")
     st.caption(
         "Enter your battery specs and press **▶ Calculate** to run the LP optimisation "
@@ -1538,9 +1698,9 @@ with tab_calc:
                     )
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 6 — ML Forecast LP
+# PAGE 6 — ML Forecast LP
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_ml:
+if page == "ML Forecast LP":
     st.subheader("ML Forecast LP — day-ahead schedule with ML consumption + solar forecasts")
     st.caption(
         "Window: selected date 13:00 → next day 24:00 (35 h · 140 slots · 15 min). "
