@@ -8,14 +8,14 @@ import pandas as pd
 # This measures *delivered* solar (what the household actually received),
 # NOT panel-side generation. Two known sources of underestimation:
 #
-#   1. EV-charging days (~141 days/year, ~18 kWh/year deficit, ~2% of annual solar)
+#   1. EV-charging days (~141 days/year, ~23 kWh/year deficit, ~2% of annual solar)
 #      afname includes EV charging; verbruik (OwnDev) does not.
 #      Formula misses EV as load → underestimates solar on those days.
 #      Root cause: ev_energie_kwh is a per-session lump sum, not per 15-min slot,
 #      so it cannot be included in the 15-min energy balance without creating
 #      fake solar peaks at EV session timestamps.
 #
-#   2. SOFAR freeze events (89 periods on 56 days/year)
+#   2. SOFAR freeze events (89 periods on 56 days, 17-month dataset)
 #      When the SOFAR ME3000SP inverter freezes, it stops all energy flows
 #      (bat_laden, bat_ontladen, injectie all go to 0). Formula gives solar=0.
 #      This is CORRECT for the LP: no energy was usable by the household.
