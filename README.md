@@ -434,7 +434,7 @@ The ML consumption forecast reduces overhead vs average profile (~+60 instead of
 **Data:**
 - `sl_productie_kwh` is a derived quantity (grid injection + battery charging), not a direct measurement. Direct self-consumption is invisible; SOFAR freeze events zero out the value during periods of non-zero solar; discrete charging steps (0 / 0.25 / 0.5 kWh/slot) create horizontal bands. Net effect: correlation with irradiance is only 0.56.
 - Inverter SOC is recorded on only 18 dates in 2026 — limited base for the Streamlit ML tab.
-- EV (~2 400 kWh/yr) is excluded from all calculations.
+- EV (~2 400 kWh/yr) is excluded from all calculations. The lump-sum recording method (one value per session start, not per 15-min slot) causes `clip(lower=0)` to underestimate `afname_no_ev` by ~201 kWh/yr (~2.5% of grid import). The error is systematic and identical across all scenarios, so it cancels in every strategy comparison. See `01_eda_real_load.ipynb` for the full quantification.
 
 **Modelling:**
 - ML forecasts for Nov 2024 – Dec 2025 are in-sample — §10/§11 results for this period are slightly inflated (estimated 5–15 EUR/yr).
