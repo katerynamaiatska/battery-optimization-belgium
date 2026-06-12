@@ -167,7 +167,7 @@ The main practical goal of Part 2: to test on real data whether it is worthwhile
 ### Data preparation (`personal_optimization/notebooks/01_eda_real_load.ipynb`)
 
 - Solar production reconstructed from energy balance (CT clamp data — direct self-consumption is invisible)
-- SOFAR inverter freeze events identified: **89 stuck periods on 56 days/year** — battery delivers zero energy
+- SOFAR inverter freeze events identified: **89 stuck periods on 56 days (17-month dataset)** — battery delivers zero energy
 - `bat_laden` glitches clipped to physical limits (0–0.75 kWh/slot)
 - EPEX day-ahead prices joined at 15-min resolution (Belgian local time)
 - Exported to `optimization_input.csv` — single clean file used by all downstream steps
