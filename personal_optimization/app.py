@@ -679,8 +679,8 @@ if page == "Validation 2026":
         n_days = st.radio("Days to show", [1, 2, 3, 4], horizontal=True)
         markup = st.slider("EPEX markup (EUR/kWh)", 0.10, 0.25, MARKUP, 0.01)
 
-    idx       = interesting_26.index(selected)
-    dates_sel = interesting_26[idx : min(idx + n_days, len(interesting_26))]
+    import datetime as _dt
+    dates_sel = [selected + _dt.timedelta(days=i) for i in range(n_days)]
     sl        = df26[np.isin(df26.index.date, dates_sel)].copy()
 
     if sl.empty:
@@ -1713,22 +1713,24 @@ if page == "ML Forecast LP":
         st.stop()
 
     # ── Controls ──────────────────────────────────────────────────────────────
-    _ml_c1, _ml_c2, _ml_c3, _ml_c4, _ml_c5, _ml_c6 = st.columns(6)
-    with _ml_c1:
-        _ml_date = st.selectbox("Date (13:00 start)", options=_ml_avail_dates,
-                                index=len(_ml_avail_dates) // 2)
-    with _ml_c2:
-        _ml_smax = st.slider("S_MAX (kWh)", 2.5, 10.0, S_MAX, 0.5, key="ml_smax")
-    with _ml_c3:
-        _ml_pkw  = st.slider("P_MAX (kW)",  1.0,  5.0, float(P_KW), 0.5, key="ml_pkw")
-    with _ml_c4:
-        _ml_smin = st.slider("S_MIN (kWh)", 0.0,  2.0, S_MIN, 0.1, key="ml_smin")
-    with _ml_c5:
-        _ml_deg  = st.slider("DEG (EUR/kWh)", 0.0, 0.20, DEG, 0.01, key="ml_deg",
-                             format="%.2f")
-    with _ml_c6:
-        _ml_mu   = st.slider("Markup (EUR/kWh)", 0.05, 0.35, MARKUP, 0.01, key="ml_mu",
-                             format="%.2f")
+    with st.form("ml_params"):
+        _ml_c1, _ml_c2, _ml_c3, _ml_c4, _ml_c5, _ml_c6 = st.columns(6)
+        with _ml_c1:
+            _ml_date = st.selectbox("Date (13:00 start)", options=_ml_avail_dates,
+                                    index=len(_ml_avail_dates) // 2)
+        with _ml_c2:
+            _ml_smax = st.slider("S_MAX (kWh)", 2.5, 10.0, S_MAX, 0.5, key="ml_smax")
+        with _ml_c3:
+            _ml_pkw  = st.slider("P_MAX (kW)",  1.0,  8.0, float(P_KW), 0.5, key="ml_pkw")
+        with _ml_c4:
+            _ml_smin = st.slider("S_MIN (kWh)", 0.0,  2.0, S_MIN, 0.1, key="ml_smin")
+        with _ml_c5:
+            _ml_deg  = st.slider("DEG (EUR/kWh)", 0.0, 0.20, DEG, 0.01, key="ml_deg",
+                                 format="%.2f")
+        with _ml_c6:
+            _ml_mu   = st.slider("Markup (EUR/kWh)", 0.05, 0.35, MARKUP, 0.01, key="ml_mu",
+                                 format="%.2f")
+        st.form_submit_button("▶ Apply parameters", type="primary")
 
     st.divider()
 
