@@ -463,4 +463,5 @@ Parametric sensitivity analysis shows **under which conditions** the system beco
 
 ## Tech stack
 
-Python 3.13 · pandas · numpy · PuLP (CBC solver) · matplotlib · Streamlit · Jupyter Notebook · scikit-learn · joblib
+Python 3.13 · pandas · numpy · PuLP (CBC solver) · matplotlib · Streamlit · Jupyter Notebook · scikit-learn · joblib · Claude Code
+
